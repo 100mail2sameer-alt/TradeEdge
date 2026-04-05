@@ -9,6 +9,30 @@
 <body>
   <div class="bg-grid"></div>
 
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-modal">
+      <h2>Connect to TradeEdge</h2>
+      <p class="modal-sub">Enter your Kite Connect credentials to generate an access token.</p>
+
+      <div class="form">
+        <label for="apiKeyInput">KITE_API_KEY</label>
+        <input id="apiKeyInput" type="text" placeholder="Your API Key" />
+
+        <label for="apiSecretInput">KITE_API_SECRET</label>
+        <input id="apiSecretInput" type="password" placeholder="Your API Secret" />
+
+        <label for="requestTokenInput">Request Token</label>
+        <input id="requestTokenInput" type="text" placeholder="Paste request_token after login" />
+      </div>
+
+      <div class="form-actions">
+        <button class="btn ghost" id="getLoginUrlBtn" type="button">Get Login URL</button>
+        <button class="btn primary" id="loginBtn" type="button">Connect & Login</button>
+      </div>
+      <p class="modal-hint" id="loginStatus">Your credentials stay in this browser session.</p>
+    </div>
+  </div>
+
   <header class="site-header">
     <div class="container nav">
       <div class="brand">
@@ -22,8 +46,8 @@
         <a href="#">Tech Stack</a>
       </nav>
       <div class="nav-actions">
-        <button class="btn ghost">View GitHub</button>
-        <button class="btn pill">
+        <button class="btn ghost" id="logoutBtn" type="button">Logout</button>
+        <button class="btn pill" type="button">
           <span class="dot"></span>
           Live NSE Data
         </button>
@@ -106,6 +130,89 @@
         navLinks.forEach((item) => item.classList.remove("active"));
         link.classList.add("active");
       });
+    });
+
+    const loginOverlay = document.getElementById("loginOverlay");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const getLoginUrlBtn = document.getElementById("getLoginUrlBtn");
+    const loginBtn = document.getElementById("loginBtn");
+    const loginStatus = document.getElementById("loginStatus");
+
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const apiSecretInput = document.getElementById("apiSecretInput");
+    const requestTokenInput = document.getElementById("requestTokenInput");
+
+    const showOverlay = () => loginOverlay.classList.add("show");
+    const hideOverlay = () => loginOverlay.classList.remove("show");
+
+    if (!sessionStorage.getItem("kite_access_token")) {
+      showOverlay();
+    }
+
+    logoutBtn.addEventListener("click", () => {
+      sessionStorage.removeItem("kite_access_token");
+      apiKeyInput.value = "";
+      apiSecretInput.value = "";
+      requestTokenInput.value = "";
+      loginStatus.textContent = "Logged out. Please enter credentials to continue.";
+      showOverlay();
+    });
+
+
+    getLoginUrlBtn.addEventListener("click", async () => {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        loginStatus.textContent = "Enter your API key first.";
+        return;
+      }
+
+      loginStatus.textContent = "Generating login URL...";
+      const res = await fetch("/api/login_url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+
+      if (!res.ok) {
+        loginStatus.textContent = "Failed to get login URL.";
+        return;
+      }
+
+      const data = await res.json();
+      window.open(data.login_url, "_blank");
+      loginStatus.textContent = "Login page opened. Paste request_token here.";
+    });
+
+    loginBtn.addEventListener("click", async () => {
+      const apiKey = apiKeyInput.value.trim();
+      const apiSecret = apiSecretInput.value.trim();
+      const requestToken = requestTokenInput.value.trim();
+
+      if (!apiKey || !apiSecret || !requestToken) {
+        loginStatus.textContent = "Please fill all fields.";
+        return;
+      }
+
+      loginStatus.textContent = "Connecting to Kite...";
+      const res = await fetch("/api/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          api_secret: apiSecret,
+          request_token: requestToken,
+        }),
+      });
+
+      if (!res.ok) {
+        loginStatus.textContent = "Login failed. Check your credentials.";
+        return;
+      }
+
+      const data = await res.json();
+      sessionStorage.setItem("kite_access_token", data.access_token);
+      loginStatus.textContent = "Connected. You can close this popup.";
+      setTimeout(hideOverlay, 600);
     });
   </script>
 </body>
