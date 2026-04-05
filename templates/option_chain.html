@@ -1,0 +1,380 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeEdge • Option Chain</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="option-chain">
+  <div class="bg-grid"></div>
+
+  <header class="site-header">
+    <div class="container nav">
+      <div class="brand">
+        <span class="brand-main">Trade</span><span class="brand-accent">Edge</span>
+      </div>
+      <nav class="nav-links">
+        <a href="/">Home</a>
+        <a class="active" href="/option-chain">Option Chain</a>
+        <a href="#">Analytics</a>
+        <a href="#">Features</a>
+        <a href="#">Tech Stack</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="btn ghost" id="logoutBtn" type="button">Logout</button>
+        <button class="btn pill" type="button">
+          <span class="dot"></span>
+          Live NSE Data
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="oc-main">
+    <section class="oc-card oc-chain">
+      <div class="oc-card-header">
+        <div>
+          <h2>Live NSE Option Chain</h2>
+          <div class="oc-controls">
+            <label class="select-group">
+              <span>Instrument Type</span>
+              <select id="instrumentType">
+                <option value="index">Index Options</option>
+                <option value="stock">Stock Options</option>
+              </select>
+            </label>
+            <label class="select-group">
+              <span>Ticker</span>
+              <select id="tickerSelect"></select>
+            </label>
+            <label class="select-group">
+              <span>Expiry</span>
+              <select id="expirySelect"></select>
+            </label>
+            <div class="quote">
+              <span class="price" id="underlyingPrice">--</span>
+              <span class="change" id="underlyingChange">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="oc-table" id="optionTable">
+        <div class="oc-row oc-group">
+          <div class="cell group-call" style="grid-column: span 3;">Calls</div>
+          <div class="cell strikes">Strike</div>
+          <div class="cell group-put" style="grid-column: span 3;">Puts</div>
+        </div>
+        <div class="oc-row oc-head">
+          <div class="cell">OI</div>
+          <div class="cell">Vol</div>
+          <div class="cell">LTP</div>
+          <div class="cell strikes">Strike</div>
+          <div class="cell">LTP</div>
+          <div class="cell">Vol</div>
+          <div class="cell">OI</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="oc-right">
+      <div class="oc-card oc-graph">
+        <div class="oc-card-header">
+          <div>
+            <h2>Strategy Payoff Graph</h2>
+            <div class="oc-tabs">
+              <button class="chip active">Payoff Graph</button>
+              <button class="chip">P&amp;L Table</button>
+              <button class="chip">Greeks</button>
+              <button class="chip">Strategy Chart</button>
+            </div>
+          </div>
+          <div class="oc-stats">
+            <div class="stat">
+              <span>Max Profit</span>
+              <strong class="up">+3556.00</strong>
+            </div>
+            <div class="stat">
+              <span>Max Loss</span>
+              <strong class="up">+21,046.00</strong>
+            </div>
+            <div class="stat">
+              <span>Breakeven</span>
+              <strong class="down">-3985.00</strong>
+            </div>
+            <div class="stat">
+              <span>Reward/Risk</span>
+              <strong class="up">4.10</strong>
+            </div>
+          </div>
+        </div>
+        <div class="graph-area">
+          <div class="graph-grid"></div>
+          <div class="graph-line"></div>
+        </div>
+      </div>
+
+      <div class="oc-card oc-positions">
+        <div class="oc-card-header">
+          <div>
+            <h2>Current Strategy Positions</h2>
+          </div>
+          <div class="oc-actions">
+            <button class="btn primary">Add</button>
+            <button class="btn ghost">Exit All</button>
+            <button class="btn ghost">Edit</button>
+          </div>
+        </div>
+        <div class="positions-table">
+          <div class="positions-row head">
+            <span>Instrument</span>
+            <span>Lots / Qty</span>
+            <span>Avg Price</span>
+            <span>LTP</span>
+            <span>P&amp;L</span>
+          </div>
+          <div class="positions-row">
+            <span>13th Apr 22800 CE</span>
+            <span>1 / 20</span>
+            <span>1150.00</span>
+            <span>2273.00</span>
+            <span class="up">+565.00</span>
+          </div>
+          <div class="positions-row">
+            <span>13th Apr 22800 PE</span>
+            <span>1 / 20</span>
+            <span>2138.00</span>
+            <span>2287.00</span>
+            <span class="down">-1309.45</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const navLinks = document.querySelectorAll(".nav-links a");
+    navLinks.forEach((link) => {
+      link.addEventListener("click", (e) => {
+        const href = link.getAttribute("href");
+        if (!href || href === "#") {
+          e.preventDefault();
+        }
+        navLinks.forEach((item) => item.classList.remove("active"));
+        link.classList.add("active");
+      });
+    });
+
+    const logoutBtn = document.getElementById("logoutBtn");
+    const instrumentType = document.getElementById("instrumentType");
+    const tickerSelect = document.getElementById("tickerSelect");
+    const expirySelect = document.getElementById("expirySelect");
+    const underlyingPrice = document.getElementById("underlyingPrice");
+    const underlyingChange = document.getElementById("underlyingChange");
+    const optionTable = document.getElementById("optionTable");
+
+    logoutBtn.addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST" });
+      sessionStorage.removeItem("kite_access_token");
+      window.location.href = "/";
+    });
+
+    let currentRows = [];
+
+    async function loadUnderlyings() {
+      const type = instrumentType.value;
+      const res = await fetch(`/api/option-chain/underlyings?type=${encodeURIComponent(type)}`);
+      if (res.status === 401) {
+        sessionStorage.removeItem("kite_access_token");
+        window.location.href = "/";
+        return;
+      }
+      const data = await res.json();
+      tickerSelect.innerHTML = "";
+      data.underlyings.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        tickerSelect.appendChild(opt);
+      });
+
+      const preferred = data.underlyings.includes("NIFTY") ? "NIFTY" : data.underlyings[0];
+      if (preferred) {
+        tickerSelect.value = preferred;
+        await loadExpiries();
+      }
+    }
+
+    async function loadExpiries() {
+      const underlying = tickerSelect.value;
+      if (!underlying) return;
+      const type = instrumentType.value;
+      const res = await fetch(`/api/option-chain/expiries?underlying=${encodeURIComponent(underlying)}&type=${encodeURIComponent(type)}`);
+      if (res.status === 401) {
+        sessionStorage.removeItem("kite_access_token");
+        window.location.href = "/";
+        return;
+      }
+      const data = await res.json();
+      expirySelect.innerHTML = "";
+      data.expiries.forEach((exp) => {
+        const opt = document.createElement("option");
+        opt.value = exp;
+        opt.textContent = exp;
+        expirySelect.appendChild(opt);
+      });
+      await buildChain();
+    }
+
+    async function buildChain() {
+      const underlying = tickerSelect.value;
+      const expiry = expirySelect.value;
+      if (!underlying || !expiry) return;
+
+      const type = instrumentType.value;
+      const res = await fetch("/api/option-chain/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ underlying, expiry, count: 12, instrument_type: type }),
+      });
+
+      if (res.status === 401) {
+        sessionStorage.removeItem("kite_access_token");
+        window.location.href = "/";
+        return;
+      }
+
+      const data = await res.json();
+      const price = data.ltp != null ? Number(data.ltp).toFixed(2) : "--";
+      underlyingPrice.textContent = price;
+      const change = data.change_pct != null ? data.change_pct.toFixed(2) + "%" : "--";
+      underlyingChange.textContent = change;
+      underlyingChange.classList.toggle("up", data.change_pct >= 0);
+      underlyingChange.classList.toggle("down", data.change_pct < 0);
+
+      const rowsHtml = data.rows
+        .map(
+          (row) => `
+          <div class="oc-row" data-strike="${row.strike}" data-ce-token="${row.ce_token ?? ""}" data-pe-token="${row.pe_token ?? ""}">
+            <div class="cell ce-oi">--</div>
+            <div class="cell ce-vol">--</div>
+            <div class="cell ce-ltp">--</div>
+            <div class="cell strikes">${row.strike}</div>
+            <div class="cell pe-ltp">--</div>
+            <div class="cell pe-vol">--</div>
+            <div class="cell pe-oi">--</div>
+          </div>
+        `
+        )
+        .join("");
+
+      optionTable.innerHTML = `
+        <div class="oc-row oc-group">
+          <div class="cell group-call" style="grid-column: span 3;">Calls</div>
+          <div class="cell strikes">Strike</div>
+          <div class="cell group-put" style="grid-column: span 3;">Puts</div>
+        </div>
+        <div class="oc-row oc-head">
+          <div class="cell">OI</div>
+          <div class="cell">Vol</div>
+          <div class="cell">LTP</div>
+          <div class="cell strikes">Strike</div>
+          <div class="cell">LTP</div>
+          <div class="cell">Vol</div>
+          <div class="cell">OI</div>
+        </div>
+        ${rowsHtml}
+      `;
+
+      currentRows = Array.from(optionTable.querySelectorAll(".oc-row[data-strike]"));
+      applyMoneyness(data.ltp);
+    }
+
+    function applyMoneyness(ltp) {
+      if (!ltp || Number.isNaN(ltp)) return;
+      let atmRow = null;
+      let atmDistance = Number.POSITIVE_INFINITY;
+
+      currentRows.forEach((row) => {
+        const strike = Number(row.dataset.strike);
+        if (!strike) return;
+        const distance = Math.abs(strike - ltp);
+        if (distance < atmDistance) {
+          atmDistance = distance;
+          atmRow = row;
+        }
+      });
+
+      currentRows.forEach((row) => {
+        const strike = Number(row.dataset.strike);
+        if (!strike) return;
+
+        row.classList.remove("atm-row", "call-itm-row", "call-otm-row", "put-itm-row", "put-otm-row");
+
+        if (row === atmRow) row.classList.add("atm-row");
+
+        const callItm = strike < ltp;
+        const putItm = strike > ltp;
+
+        row.classList.add(callItm ? "call-itm-row" : "call-otm-row");
+        row.classList.add(putItm ? "put-itm-row" : "put-otm-row");
+      });
+    }
+
+    async function startPolling() {
+      setInterval(async () => {
+        const res = await fetch("/api/option-chain/ticks");
+        if (res.status === 401) {
+          sessionStorage.removeItem("kite_access_token");
+          window.location.href = "/";
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+
+        currentRows.forEach((row) => {
+          const ceToken = Number(row.dataset.ceToken);
+          const peToken = Number(row.dataset.peToken);
+          const ceTick = data.ticks[ceToken];
+          const peTick = data.ticks[peToken];
+
+          if (ceTick) {
+            const ceLtp = row.querySelector(".ce-ltp");
+            const ceOi = row.querySelector(".ce-oi");
+            const ceVol = row.querySelector(".ce-vol");
+            if (ceLtp && ceTick.last_price != null) ceLtp.textContent = ceTick.last_price.toFixed(2);
+            if (ceOi && ceTick.oi != null) ceOi.textContent = ceTick.oi.toLocaleString();
+            if (ceVol && ceTick.volume != null) ceVol.textContent = ceTick.volume.toLocaleString();
+          }
+
+          if (peTick) {
+            const peLtp = row.querySelector(".pe-ltp");
+            const peOi = row.querySelector(".pe-oi");
+            const peVol = row.querySelector(".pe-vol");
+            if (peLtp && peTick.last_price != null) peLtp.textContent = peTick.last_price.toFixed(2);
+            if (peOi && peTick.oi != null) peOi.textContent = peTick.oi.toLocaleString();
+            if (peVol && peTick.volume != null) peVol.textContent = peTick.volume.toLocaleString();
+          }
+        });
+
+        const spot = Number(underlyingPrice.textContent);
+        if (!Number.isNaN(spot)) {
+          applyMoneyness(spot);
+        }
+      }, 1500);
+    }
+
+    instrumentType.addEventListener("change", loadUnderlyings);
+    tickerSelect.addEventListener("change", loadExpiries);
+    expirySelect.addEventListener("change", buildChain);
+
+    if (sessionStorage.getItem("kite_access_token")) {
+      loadUnderlyings();
+      startPolling();
+    } else {
+      window.location.href = "/";
+    }
+  </script>
+</body>
+</html>

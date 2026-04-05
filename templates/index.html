@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TradeEdge</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <div class="bg-grid"></div>
@@ -40,7 +40,7 @@
       </div>
       <nav class="nav-links">
         <a class="active" href="#">Home</a>
-        <a href="#">Option Chain</a>
+        <a href="/option-chain">Option Chain</a>
         <a href="#">Analytics</a>
         <a href="#">Features</a>
         <a href="#">Tech Stack</a>
@@ -59,7 +59,7 @@
     <div class="container hero-inner">
       <h1><span>Trade</span><span class="accent">Edge</span></h1>
       <div class="cta">
-        <button class="btn primary">Explore Live Option Chain</button>
+        <a class="btn primary" href="/option-chain">Explore Live Option Chain</a>
         <button class="btn ghost">View Analytics Dashboard</button>
       </div>
     </div>
@@ -68,11 +68,11 @@
   <section class="features">
     <div class="container">
       <div class="cards">
-        <article class="card">
+        <a class="card card-link" href="/option-chain">
           <div class="icon">▦</div>
           <h3>Live NSE Option Chain</h3>
           <p>Real time option chain • live NSE option chain</p>
-        </article>
+        </a>
 
         <article class="card">
           <div class="icon">▮▰</div>
@@ -126,7 +126,10 @@
     const navLinks = document.querySelectorAll(".nav-links a");
     navLinks.forEach((link) => {
       link.addEventListener("click", (e) => {
-        e.preventDefault();
+        const href = link.getAttribute("href");
+        if (!href || href === "#") {
+          e.preventDefault();
+        }
         navLinks.forEach((item) => item.classList.remove("active"));
         link.classList.add("active");
       });
@@ -149,7 +152,8 @@
       showOverlay();
     }
 
-    logoutBtn.addEventListener("click", () => {
+    logoutBtn.addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST" });
       sessionStorage.removeItem("kite_access_token");
       apiKeyInput.value = "";
       apiSecretInput.value = "";

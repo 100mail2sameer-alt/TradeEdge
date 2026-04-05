@@ -1,14 +1,15 @@
 ﻿from __future__ import annotations
 
 import os
-from datetime import datetime
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, render_template, request
 from kiteconnect import KiteConnect
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+from option_chain import bp as option_chain_bp, clear_session, init_session
 
-# Simple in-memory session store for this demo (clears when server stops)
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.register_blueprint(option_chain_bp)
+
 SESSION = {
   "api_key": None,
   "access_token": None,
@@ -21,7 +22,12 @@ def _build_kite(api_key: str) -> KiteConnect:
 
 @app.get("/")
 def index():
-  return send_from_directory(".", "index.html")
+  return render_template("index.html")
+
+
+@app.get("/option-chain")
+def option_chain_page():
+  return render_template("option_chain.html")
 
 
 @app.post("/api/login_url")
@@ -53,52 +59,17 @@ def access_token():
   SESSION["api_key"] = api_key
   SESSION["access_token"] = access_token_value
 
+  init_session(api_key, access_token_value)
+
   return jsonify({"access_token": access_token_value})
 
 
-@app.post("/api/ltp")
-def ltp():
-  data = request.get_json(force=True)
-  symbols = data.get("symbols") or []
-  api_key = SESSION.get("api_key")
-  access_token_value = SESSION.get("access_token")
-
-  if not api_key or not access_token_value:
-    return jsonify({"error": "not_logged_in"}), 401
-
-  kite = _build_kite(api_key)
-  kite.set_access_token(access_token_value)
-
-  return jsonify(kite.ltp(symbols))
-
-
-@app.post("/api/historical")
-def historical():
-  data = request.get_json(force=True)
-  api_key = SESSION.get("api_key")
-  access_token_value = SESSION.get("access_token")
-
-  if not api_key or not access_token_value:
-    return jsonify({"error": "not_logged_in"}), 401
-
-  instrument_token = int(data.get("instrument_token"))
-  interval = data.get("interval") or "day"
-  from_date = data.get("from_date")
-  to_date = data.get("to_date")
-
-  kite = _build_kite(api_key)
-  kite.set_access_token(access_token_value)
-
-  candles = kite.historical_data(
-    instrument_token=instrument_token,
-    from_date=datetime.fromisoformat(from_date),
-    to_date=datetime.fromisoformat(to_date),
-    interval=interval,
-    continuous=False,
-    oi=False,
-  )
-
-  return jsonify(candles)
+@app.post("/api/logout")
+def logout():
+  clear_session()
+  SESSION["api_key"] = None
+  SESSION["access_token"] = None
+  return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
