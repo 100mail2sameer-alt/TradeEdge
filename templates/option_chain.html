@@ -96,26 +96,35 @@
           </div>
           <div class="oc-stats">
             <div class="stat">
-              <span>Max Profit</span>
-              <strong class="up">+3556.00</strong>
-            </div>
-            <div class="stat">
-              <span>Max Loss</span>
-              <strong class="up">+21,046.00</strong>
+              <span>Premium Collected</span>
+              <strong class="up" id="statPremium">+0.00</strong>
             </div>
             <div class="stat">
               <span>Breakeven</span>
-              <strong class="down">-3985.00</strong>
-            </div>
-            <div class="stat">
-              <span>Reward/Risk</span>
-              <strong class="up">4.10</strong>
+              <strong id="statBreakeven">--</strong>
             </div>
           </div>
         </div>
-        <div class="graph-area">
+        <div class="graph-area" id="graphArea">
           <div class="graph-grid"></div>
-          <div class="graph-line"></div>
+          <svg class="payoff-svg" id="payoffSvg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="payoffFillUp" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="rgba(36, 214, 232, 0.55)" />
+                <stop offset="100%" stop-color="rgba(36, 214, 232, 0.05)" />
+              </linearGradient>
+              <linearGradient id="payoffFillDown" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="rgba(249, 107, 107, 0.5)" />
+                <stop offset="100%" stop-color="rgba(249, 107, 107, 0.05)" />
+              </linearGradient>
+            </defs>
+            <path id="payoffAreaUp" fill="url(#payoffFillUp)" d="" />
+            <path id="payoffAreaDown" fill="url(#payoffFillDown)" d="" />
+            <path id="payoffLine" fill="none" stroke="rgba(36, 214, 232, 0.8)" stroke-width="1.2" d="" />
+          </svg>
+          <div class="crosshair v" id="crosshairV"></div>
+          <div class="crosshair h" id="crosshairH"></div>
+          <div class="crosshair-tooltip" id="crosshairTooltip"></div>
         </div>
       </div>
 
@@ -125,37 +134,25 @@
             <h2>Current Strategy Positions</h2>
           </div>
           <div class="oc-actions">
-            <button class="btn primary">Add</button>
-            <button class="btn ghost">Exit All</button>
-            <button class="btn ghost">Edit</button>
+            <button class="btn primary" id="executeAllBtn">Execute All</button>
+            <button class="btn ghost" id="exitAllBtn">Exit All</button>
           </div>
         </div>
-        <div class="positions-table">
+        <div class="positions-table" id="positionsTable">
           <div class="positions-row head">
             <span>Instrument</span>
             <span>Lots / Qty</span>
             <span>Avg Price</span>
             <span>LTP</span>
             <span>P&amp;L</span>
-          </div>
-          <div class="positions-row">
-            <span>13th Apr 22800 CE</span>
-            <span>1 / 20</span>
-            <span>1150.00</span>
-            <span>2273.00</span>
-            <span class="up">+565.00</span>
-          </div>
-          <div class="positions-row">
-            <span>13th Apr 22800 PE</span>
-            <span>1 / 20</span>
-            <span>2138.00</span>
-            <span>2287.00</span>
-            <span class="down">-1309.45</span>
+            <span>Actions</span>
           </div>
         </div>
       </div>
     </section>
   </main>
+
+  <div class="toast-stack" id="toastStack"></div>
 
   <script>
     const navLinks = document.querySelectorAll(".nav-links a");
@@ -179,6 +176,16 @@
     const underlyingPrice = document.getElementById("underlyingPrice");
     const underlyingChange = document.getElementById("underlyingChange");
     const optionTable = document.getElementById("optionTable");
+    const positionsTable = document.getElementById("positionsTable");
+    const payoffLine = document.getElementById("payoffLine");
+    const payoffAreaUp = document.getElementById("payoffAreaUp");
+    const payoffAreaDown = document.getElementById("payoffAreaDown");
+    const graphArea = document.getElementById("graphArea");
+    const crosshairV = document.getElementById("crosshairV");
+    const crosshairH = document.getElementById("crosshairH");
+    const crosshairTooltip = document.getElementById("crosshairTooltip");
+    const statPremium = document.getElementById("statPremium");
+    const statBreakeven = document.getElementById("statBreakeven");
 
     logoutBtn.addEventListener("click", async () => {
       await fetch("/api/logout", { method: "POST" });
@@ -186,8 +193,56 @@
       window.location.href = "/";
     });
 
+    function showToast(message, variant = "error") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${variant}`;
+      toast.textContent = message;
+      toastStack.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add("show"));
+      setTimeout(() => {
+        toast.classList.remove("show");
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
+    executeAllBtn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/trade/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ positions }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || "Execution failed.", "error");
+          return;
+        }
+        positions.forEach((p) => (p.executed = true));
+        updatePositionsPnL(true);
+        showToast("Orders submitted.", "success");
+      } catch (_) {
+        showToast("Execution failed. Network error.", "error");
+      }
+    });
+
+    exitAllBtn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/trade/exit-all", { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || "Exit all failed.", "error");
+          return;
+        }
+        showToast("Exit all submitted.", "success");
+      } catch (_) {
+        showToast("Exit all failed. Network error.", "error");
+      }
+    });
+
+
     let currentRows = [];
     let atmCentered = false;
+    const positions = [];
 
     async function loadUnderlyings() {
       const type = instrumentType.value;
@@ -303,12 +358,24 @@
       const rowsHtml = data.rows
         .map(
           (row) => `
-          <div class="oc-row" data-strike="${row.strike}" data-ce-token="${row.ce_token ?? ""}" data-pe-token="${row.pe_token ?? ""}">
+          <div class="oc-row" data-strike="${row.strike}" data-lot="${row.lot_size ?? ""}" data-ce-token="${row.ce_token ?? ""}" data-pe-token="${row.pe_token ?? ""}" data-ce-symbol="${row.ce_symbol ?? ""}" data-pe-symbol="${row.pe_symbol ?? ""}" data-ce-exchange="${row.ce_exchange ?? ""}" data-pe-exchange="${row.pe_exchange ?? ""}">
             <div class="cell ce-oi">--</div>
             <div class="cell ce-vol">--</div>
-            <div class="cell ce-ltp">--</div>
+            <div class="cell ce-ltp trade-cell" data-side="CE">
+              <span class="ltp-val">--</span>
+              <div class="trade-actions">
+                <button class="trade-btn buy" data-side="buy" type="button">B</button>
+                <button class="trade-btn sell" data-side="sell" type="button">S</button>
+              </div>
+            </div>
             <div class="cell strikes">${row.strike}</div>
-            <div class="cell pe-ltp">--</div>
+            <div class="cell pe-ltp trade-cell" data-side="PE">
+              <span class="ltp-val">--</span>
+              <div class="trade-actions">
+                <button class="trade-btn buy" data-side="buy" type="button">B</button>
+                <button class="trade-btn sell" data-side="sell" type="button">S</button>
+              </div>
+            </div>
             <div class="cell pe-vol">--</div>
             <div class="cell pe-oi">--</div>
           </div>
@@ -337,7 +404,343 @@
       currentRows = Array.from(optionTable.querySelectorAll(".oc-row[data-strike]"));
       atmCentered = false;
       applyMoneyness(data.ltp);
+      updatePayoff();
     }
+
+    optionTable.addEventListener("click", (e) => {
+      const btn = e.target.closest(".trade-btn");
+      if (!btn) return;
+      const tradeCell = btn.closest(".trade-cell");
+      if (!tradeCell) return;
+      const side = btn.dataset.side; // buy / sell
+      const row = tradeCell.closest(".oc-row");
+      const strike = Number(row.dataset.strike);
+      const optionType = tradeCell.dataset.side;
+      const ltpText = tradeCell.querySelector(".ltp-val")?.textContent;
+      const ltp = Number(ltpText);
+      if (!strike || Number.isNaN(ltp)) return;
+      const execPrice = ltp;
+
+      const lotSize = Number(row.dataset.lot) || 1;
+      const symbol = optionType === "CE" ? row.dataset.ceSymbol : row.dataset.peSymbol;
+      const exchange = optionType === "CE" ? row.dataset.ceExchange : row.dataset.peExchange;
+      const sameKey = (p) => p.optionType === optionType && p.strike === strike;
+      const opposite = positions.find((p) => sameKey(p) && p.side !== side);
+      if (opposite) {
+        opposite.qty -= 1;
+        if (opposite.qty <= 0) {
+          positions.splice(positions.indexOf(opposite), 1);
+        }
+      } else {
+        const existing = positions.find((p) => sameKey(p) && p.side === side);
+        if (existing) {
+          existing.qty += 1;
+          existing.premium = execPrice;
+          existing.symbol = symbol;
+          existing.exchange = exchange;
+        } else {
+          positions.push({
+            optionType,
+            side,
+            strike,
+            premium: execPrice,
+            qty: 1,
+            lotSize,
+            orderType: "market",
+            orderPrice: null,
+            symbol,
+            exchange,
+          });
+        }
+      }
+
+      renderPositions();
+      updatePayoff();
+    });
+
+    function renderPositions() {
+      const rows = positions.map((pos, idx) => {
+        const tag = `${pos.strike} ${pos.optionType}`;
+        const qty = `${pos.qty} / ${pos.qty * pos.lotSize}`;
+        const ltp = pos.premium.toFixed(2);
+        const pnl = 0;
+        return `
+          <div class="positions-row">
+            <span>${pos.side.toUpperCase()} ${tag}</span>
+            <span>${qty}</span>
+            <span>${pos.premium.toFixed(2)}</span>
+            <span>${ltp}</span>
+            <span>
+              <div class="pnl-label">P&amp;L</div>
+              <div class="pnl-value">--</div>
+            </span>
+            <span class="pos-actions">
+              <label class="pos-order">
+                <select class="pos-order-type" data-index="${idx}">
+                  <option value="market" ${pos.orderType === "market" ? "selected" : ""}>MKT</option>
+                  <option value="limit" ${pos.orderType === "limit" ? "selected" : ""}>LMT</option>
+                </select>
+                <input class="pos-order-price" data-index="${idx}" type="number" step="0.05" placeholder="Limit" value="${pos.orderPrice ?? ""}" ${pos.orderType === "limit" ? "" : "disabled"} />
+              </label>
+              <button class="pos-btn remove" data-index="${idx}" type="button">Remove</button>
+            </span>
+          </div>
+        `;
+      }).join("");
+
+      positionsTable.innerHTML = `
+        <div class="positions-row head">
+          <span>Instrument</span>
+          <span>Lots / Qty</span>
+          <span>Avg Price</span>
+          <span>LTP</span>
+          <span>P&amp;L</span>
+          <span>Actions</span>
+        </div>
+        ${rows}
+      `;
+    }
+
+    positionsTable.addEventListener("click", (e) => {
+      const btn = e.target.closest(".pos-btn");
+      if (!btn) return;
+      const idx = Number(btn.dataset.index);
+      if (Number.isNaN(idx) || !positions[idx]) return;
+
+      positions.splice(idx, 1);
+      renderPositions();
+      updatePayoff();
+    });
+
+    positionsTable.addEventListener("change", (e) => {
+      const typeSelect = e.target.closest(".pos-order-type");
+      const priceInput = e.target.closest(".pos-order-price");
+      if (typeSelect) {
+        const idx = Number(typeSelect.dataset.index);
+        const pos = positions[idx];
+        if (!pos) return;
+        pos.orderType = typeSelect.value;
+        const input = positionsTable.querySelector(`.pos-order-price[data-index="${idx}"]`);
+        if (input) {
+          input.disabled = pos.orderType !== "limit";
+        }
+        renderPositions();
+        updatePayoff();
+      }
+      if (priceInput) {
+        const idx = Number(priceInput.dataset.index);
+        const pos = positions[idx];
+        if (!pos) return;
+        const val = Number(priceInput.value);
+        pos.orderPrice = Number.isNaN(val) ? null : val;
+        renderPositions();
+        updatePayoff();
+      }
+    });
+
+
+    function computePayoff(price) {
+      let total = 0;
+      positions.forEach((pos) => {
+        const intrinsic = pos.optionType === "CE"
+          ? Math.max(price - pos.strike, 0)
+          : Math.max(pos.strike - price, 0);
+        const payoff = intrinsic - pos.premium;
+        const signed = pos.side === "buy" ? payoff : -payoff;
+        total += signed * pos.qty * pos.lotSize;
+      });
+      return total;
+    }
+
+    let payoffPoints = [];
+
+    function updatePayoff() {
+      if (!positions.length) {
+        payoffLine.setAttribute("d", "");
+        payoffAreaUp.setAttribute("d", "");
+        payoffAreaDown.setAttribute("d", "");
+        statPremium.textContent = "+0.00";
+        statBreakeven.textContent = "--";
+        payoffPoints = [];
+        return;
+      }
+
+      const spot = Number(underlyingPrice.textContent) || 0;
+      const strikes = currentRows.map((row) => Number(row.dataset.strike)).filter(Boolean);
+      const minStrike = Math.min(...strikes);
+      const maxStrike = Math.max(...strikes);
+      const start = minStrike || (spot * 0.9);
+      const end = maxStrike || (spot * 1.1);
+
+      const points = [];
+      const steps = 200;
+      let max = -Infinity;
+      let min = Infinity;
+      for (let i = 0; i <= steps; i++) {
+        const price = start + ((end - start) * i) / steps;
+        const pnl = computePayoff(price);
+        points.push({ x: i / steps, y: pnl });
+        max = Math.max(max, pnl);
+        min = Math.min(min, pnl);
+      }
+
+      const pad = (max - min) * 0.08 || 1;
+      const paddedMax = max + pad;
+      const paddedMin = min - pad;
+      const range = paddedMax - paddedMin || 1;
+      const toSvgY = (val) => (100 - ((val - paddedMin) / range) * 100);
+
+      const path = points
+        .map((p, i) => {
+          const x = (p.x * 100).toFixed(2);
+          const y = toSvgY(p.y).toFixed(2);
+          return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+        })
+        .join(" ");
+
+      payoffLine.setAttribute("d", path);
+
+      const zeroY = toSvgY(0);
+      const posPath = points
+        .map((p, i) => {
+          const x = (p.x * 100).toFixed(2);
+          const y = toSvgY(Math.max(p.y, 0)).toFixed(2);
+          return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+        })
+        .join(" ");
+      const negPath = points
+        .map((p, i) => {
+          const x = (p.x * 100).toFixed(2);
+          const y = toSvgY(Math.min(p.y, 0)).toFixed(2);
+          return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+        })
+        .join(" ");
+
+      const areaUp = `${posPath} L 100 ${zeroY.toFixed(2)} L 0 ${zeroY.toFixed(2)} Z`;
+      const areaDown = `${negPath} L 100 ${zeroY.toFixed(2)} L 0 ${zeroY.toFixed(2)} Z`;
+      payoffAreaUp.setAttribute("d", areaUp);
+      payoffAreaDown.setAttribute("d", areaDown);
+
+      const breakevens = [];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        if ((a.y <= 0 && b.y >= 0) || (a.y >= 0 && b.y <= 0)) {
+          const t = (0 - a.y) / (b.y - a.y || 1);
+          const x = a.x + (b.x - a.x) * t;
+          const price = start + (end - start) * x;
+          breakevens.push(price);
+        }
+      }
+
+      let premiumNet = 0;
+      positions.forEach((pos) => {
+        const sign = pos.side === "sell" ? 1 : -1;
+        premiumNet += sign * pos.premium;
+      });
+      const premiumLabel = premiumNet >= 0 ? "Premium Collected" : "Premium Paid";
+      const premiumEl = statPremium.closest(".stat")?.querySelector("span");
+      if (premiumEl) premiumEl.textContent = premiumLabel;
+      statPremium.textContent = `${premiumNet >= 0 ? "+" : ""}${premiumNet.toFixed(2)}`;
+      statBreakeven.textContent = breakevens.length ? breakevens.map((b) => b.toFixed(2)).join(", ") : "--";
+
+      graphArea.dataset.payoffStart = String(start);
+      graphArea.dataset.payoffEnd = String(end);
+      graphArea.dataset.payoffMin = String(paddedMin);
+      graphArea.dataset.payoffMax = String(paddedMax);
+      payoffPoints = points;
+    }
+
+    async function updatePositionsPnL(force = false) {
+      const anyExecuted = positions.some((p) => p.executed);
+      if (!force && !anyExecuted) {
+        return;
+      }
+      let portfolioMap = {};
+      try {
+        const res = await fetch("/api/portfolio/positions");
+        if (res.ok) {
+          const data = await res.json();
+          const net = data.net || [];
+          net.forEach((pos) => {
+            const key = `${pos.exchange}:${pos.tradingsymbol}`;
+            portfolioMap[key] = pos;
+          });
+        }
+      } catch (_) {
+        portfolioMap = {};
+      }
+
+      positionsTable.querySelectorAll(".positions-row").forEach((row, idx) => {
+        if (idx === 0) return;
+        const pos = positions[idx - 1];
+        if (!pos) return;
+
+        const key = `${pos.exchange}:${pos.symbol}`;
+        const livePos = portfolioMap[key];
+        if (!livePos) {
+          const pnlEl = row.querySelector(".pnl-value");
+          if (pnlEl) {
+            pnlEl.textContent = "--";
+            pnlEl.classList.remove("up", "down");
+          }
+          return;
+        }
+
+        const pnlVal = livePos.pnl ?? livePos.unrealised ?? livePos.realised ?? 0;
+
+        const pnlEl = row.querySelector(".pnl-value");
+        if (pnlEl) {
+          pnlEl.textContent = `${pnlVal >= 0 ? "+" : ""}${pnlVal.toFixed(2)}`;
+          pnlEl.classList.toggle("up", pnlVal >= 0);
+          pnlEl.classList.toggle("down", pnlVal < 0);
+        }
+      });
+    }
+
+    graphArea.addEventListener("mousemove", (e) => {
+      const rect = graphArea.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const width = rect.width;
+      const height = rect.height;
+      if (x < 0 || x > width || y < 0 || y > height) return;
+
+      const start = Number(graphArea.dataset.payoffStart);
+      const end = Number(graphArea.dataset.payoffEnd);
+      const min = Number(graphArea.dataset.payoffMin);
+      const max = Number(graphArea.dataset.payoffMax);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(min) || !Number.isFinite(max)) return;
+
+      crosshairV.style.left = `${x}px`;
+      crosshairH.style.top = `${y}px`;
+      crosshairV.classList.add("show");
+      crosshairH.classList.add("show");
+
+      const price = start + (x / width) * (end - start);
+      if (!payoffPoints.length) return;
+      const t = x / width;
+      const idx = Math.min(payoffPoints.length - 2, Math.max(0, Math.floor(t * payoffPoints.length)));
+      const a = payoffPoints[idx];
+      const b = payoffPoints[idx + 1];
+      const localT = (t - a.x) / ((b.x - a.x) || 1);
+      const pnl = a.y + (b.y - a.y) * localT;
+      const yOnLine = (1 - ((pnl - min) / (max - min || 1))) * height;
+
+      crosshairV.style.left = `${x}px`;
+      crosshairH.style.top = `${yOnLine}px`;
+      crosshairTooltip.textContent = `${price.toFixed(2)} • ${pnl.toFixed(2)}`;
+      crosshairTooltip.style.left = `${x}px`;
+      crosshairTooltip.style.top = `${yOnLine}px`;
+      crosshairTooltip.style.transform = `translate(-50%, -120%)`;
+      crosshairTooltip.classList.add("show");
+    });
+
+    graphArea.addEventListener("mouseleave", () => {
+      crosshairV.classList.remove("show");
+      crosshairH.classList.remove("show");
+      crosshairTooltip.classList.remove("show");
+    });
 
     function applyMoneyness(ltp) {
       if (!ltp || Number.isNaN(ltp)) return;
@@ -398,7 +801,8 @@
             const ceLtp = row.querySelector(".ce-ltp");
             const ceOi = row.querySelector(".ce-oi");
             const ceVol = row.querySelector(".ce-vol");
-            if (ceLtp && ceTick.last_price != null) ceLtp.textContent = ceTick.last_price.toFixed(2);
+            const ceVal = ceLtp?.querySelector(".ltp-val");
+            if (ceVal && ceTick.last_price != null) ceVal.textContent = ceTick.last_price.toFixed(2);
             if (ceOi && ceTick.oi != null) ceOi.textContent = ceTick.oi.toLocaleString();
             if (ceVol && ceTick.volume != null) ceVol.textContent = ceTick.volume.toLocaleString();
           }
@@ -407,15 +811,31 @@
             const peLtp = row.querySelector(".pe-ltp");
             const peOi = row.querySelector(".pe-oi");
             const peVol = row.querySelector(".pe-vol");
-            if (peLtp && peTick.last_price != null) peLtp.textContent = peTick.last_price.toFixed(2);
+            const peVal = peLtp?.querySelector(".ltp-val");
+            if (peVal && peTick.last_price != null) peVal.textContent = peTick.last_price.toFixed(2);
             if (peOi && peTick.oi != null) peOi.textContent = peTick.oi.toLocaleString();
             if (peVol && peTick.volume != null) peVol.textContent = peTick.volume.toLocaleString();
+          }
+        });
+
+        positions.forEach((pos) => {
+          const row = currentRows.find((r) => Number(r.dataset.strike) === pos.strike);
+          if (!row) return;
+          if (pos.optionType === "CE") {
+            const ceToken = Number(row.dataset.ceToken);
+            const ceTick = data.ticks[ceToken];
+            if (ceTick && ceTick.last_price != null) pos.currentLtp = ceTick.last_price;
+          } else {
+            const peToken = Number(row.dataset.peToken);
+            const peTick = data.ticks[peToken];
+            if (peTick && peTick.last_price != null) pos.currentLtp = peTick.last_price;
           }
         });
 
         const spot = Number(underlyingPrice.textContent);
         if (!Number.isNaN(spot)) {
           applyMoneyness(spot);
+          updatePayoff();
         }
       }, 1500);
     }
@@ -434,3 +854,6 @@
   </script>
 </body>
 </html>
+    const executeAllBtn = document.getElementById("executeAllBtn");
+    const exitAllBtn = document.getElementById("exitAllBtn");
+    const toastStack = document.getElementById("toastStack");

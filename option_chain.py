@@ -285,6 +285,9 @@ def _build_chain_rows(
         "pe_token": pe.get("instrument_token") if pe else None,
         "ce_symbol": ce.get("tradingsymbol") if ce else "--",
         "pe_symbol": pe.get("tradingsymbol") if pe else "--",
+        "lot_size": (ce.get("lot_size") if ce else None) or (pe.get("lot_size") if pe else None),
+        "ce_exchange": ce.get("exchange") if ce else None,
+        "pe_exchange": pe.get("exchange") if pe else None,
       }
     )
 
@@ -447,3 +450,27 @@ def get_ticks():
     }
 
   return jsonify({"ticks": resolved})
+
+
+@bp.get("/api/portfolio/positions")
+def portfolio_positions():
+  if not _ensure_logged_in():
+    return jsonify({"error": "not_logged_in"}), 401
+
+  kite = _get_kite()
+  data = kite.positions()
+  return jsonify(data)
+
+
+@bp.post("/api/trade/execute")
+def trade_execute():
+  if not _ensure_logged_in():
+    return jsonify({"error": "not_logged_in"}), 401
+  return jsonify({"error": "Execution is not configured yet."}), 400
+
+
+@bp.post("/api/trade/exit-all")
+def trade_exit_all():
+  if not _ensure_logged_in():
+    return jsonify({"error": "not_logged_in"}), 401
+  return jsonify({"error": "Exit all is not configured yet."}), 400
