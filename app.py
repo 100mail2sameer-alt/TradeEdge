@@ -30,6 +30,11 @@ def option_chain_page():
   return render_template("option_chain.html")
 
 
+@app.get("/option_chain.html")
+def option_chain_legacy():
+  return render_template("option_chain.html")
+
+
 @app.post("/api/login_url")
 def login_url():
   data = request.get_json(force=True)

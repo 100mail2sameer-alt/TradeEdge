@@ -228,7 +228,13 @@ def _get_expiries(nfo_instruments: List[dict], underlying: str) -> List[str]:
   return sorted([exp.strftime("%Y-%m-%d") for exp in expiries if exp])
 
 
-def _build_chain_rows(nfo_instruments: List[dict], underlying: str, expiry: str, ltp: Optional[float], count: int = 12):
+def _build_chain_rows(
+  nfo_instruments: List[dict],
+  underlying: str,
+  expiry: str,
+  ltp: Optional[float],
+  strike_interval: Optional[float] = None,
+):
   filtered = [
     inst
     for inst in nfo_instruments
@@ -250,19 +256,26 @@ def _build_chain_rows(nfo_instruments: List[dict], underlying: str, expiry: str,
   if not strikes:
     return []
 
+  if strike_interval:
+    scale = 100 if strike_interval % 1 else 1
+    interval_scaled = int(round(strike_interval * scale))
+    strikes = [
+      s for s in strikes if int(round(s * scale)) % interval_scaled == 0
+    ] or strikes
+  if not strikes:
+    return []
+
+  rows = []
   if ltp is not None:
     atm_strike = min(strikes, key=lambda s: abs(s - ltp))
     atm_index = strikes.index(atm_strike)
   else:
     atm_index = len(strikes) // 2
+  start = max(0, atm_index - 20)
+  end = min(len(strikes), atm_index + 21)
+  strikes = strikes[start:end]
 
-  half = max(1, count // 2)
-  start = max(0, atm_index - half)
-  end = min(len(strikes), start + count)
-  start = max(0, end - count)
-
-  rows = []
-  for strike in strikes[start:end]:
+  for strike in strikes:
     ce = strike_map[strike].get("CE")
     pe = strike_map[strike].get("PE")
     rows.append(
@@ -276,6 +289,29 @@ def _build_chain_rows(nfo_instruments: List[dict], underlying: str, expiry: str,
     )
 
   return rows
+
+
+def _get_strike_intervals(nfo_instruments: List[dict], underlying: str, expiry: str) -> List[float]:
+  strikes = sorted(
+    {
+      float(inst.get("strike"))
+      for inst in nfo_instruments
+      if inst.get("segment") == "NFO-OPT"
+      and inst.get("name") == underlying
+      and inst.get("expiry")
+      and inst.get("expiry").strftime("%Y-%m-%d") == expiry
+      and inst.get("strike") is not None
+    }
+  )
+  if len(strikes) < 2:
+    return []
+
+  diffs = sorted({round(strikes[i + 1] - strikes[i], 4) for i in range(len(strikes) - 1)})
+  intervals = [d for d in diffs if d >= 100]
+  for extra in (100.0, 200.0):
+    if extra not in intervals:
+      intervals.append(extra)
+  return sorted(intervals)
 
 
 @bp.get("/api/option-chain/underlyings")
@@ -312,6 +348,29 @@ def option_chain_expiries():
   return jsonify({"expiries": _get_expiries(nfo_instruments, underlying)})
 
 
+@bp.get("/api/option-chain/intervals")
+def option_chain_intervals():
+  if not _ensure_logged_in():
+    return jsonify({"error": "not_logged_in"}), 401
+
+  underlying = (request.args.get("underlying") or "").strip()
+  expiry = (request.args.get("expiry") or "").strip()
+  category = (request.args.get("type") or "index").strip().lower()
+  if category not in ("index", "stock"):
+    category = "index"
+  if not underlying or not expiry:
+    return jsonify({"error": "underlying_expiry_required"}), 400
+
+  kite = _get_kite()
+  nfo_instruments, _ = _load_instruments(kite)
+  allowed = _get_underlyings(nfo_instruments, category)
+  if underlying not in allowed:
+    return jsonify({"error": "invalid_underlying"}), 400
+
+  intervals = _get_strike_intervals(nfo_instruments, underlying, expiry)
+  return jsonify({"intervals": intervals})
+
+
 @bp.post("/api/option-chain/build")
 def option_chain_build():
   if not _ensure_logged_in():
@@ -323,7 +382,8 @@ def option_chain_build():
   category = (data.get("instrument_type") or "index").strip().lower()
   if category not in ("index", "stock"):
     category = "index"
-  count = int(data.get("count") or 12)
+  interval = data.get("interval")
+  strike_interval = float(interval) if interval else None
 
   if not underlying or not expiry:
     return jsonify({"error": "underlying_expiry_required"}), 400
@@ -335,7 +395,7 @@ def option_chain_build():
     return jsonify({"error": "invalid_underlying"}), 400
 
   ltp, change_pct = _get_underlying_quote(kite, underlying, nse_instruments)
-  rows = _build_chain_rows(nfo_instruments, underlying, expiry, ltp, count)
+  rows = _build_chain_rows(nfo_instruments, underlying, expiry, ltp, strike_interval)
 
   tokens = [row["ce_token"] for row in rows if row["ce_token"]] + [row["pe_token"] for row in rows if row["pe_token"]]
 

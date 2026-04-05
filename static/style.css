@@ -398,16 +398,23 @@ a.btn {
 }
 
 body.option-chain {
-  height: auto;
-  overflow: auto;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .oc-main {
   width: min(1320px, 94%);
-  margin: 26px auto 40px;
+  margin: 18px auto 20px;
   display: grid;
   grid-template-columns: 1.05fr 1.35fr;
   gap: 22px;
+  height: calc(100vh - 120px);
+}
+
+.oc-chain {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .oc-card {
@@ -533,6 +540,14 @@ body.option-chain {
 .oc-table {
   display: grid;
   gap: 6px;
+  overflow: auto;
+  padding-right: 6px;
+  scrollbar-width: none;
+}
+
+.oc-table::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .oc-row {

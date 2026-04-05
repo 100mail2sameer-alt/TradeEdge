@@ -52,6 +52,10 @@
               <span>Expiry</span>
               <select id="expirySelect"></select>
             </label>
+            <label class="select-group" id="intervalGroup">
+              <span>Strike Interval</span>
+              <select id="intervalSelect"></select>
+            </label>
             <div class="quote">
               <span class="price" id="underlyingPrice">--</span>
               <span class="change" id="underlyingChange">--</span>
@@ -170,6 +174,8 @@
     const instrumentType = document.getElementById("instrumentType");
     const tickerSelect = document.getElementById("tickerSelect");
     const expirySelect = document.getElementById("expirySelect");
+    const intervalSelect = document.getElementById("intervalSelect");
+    const intervalGroup = document.getElementById("intervalGroup");
     const underlyingPrice = document.getElementById("underlyingPrice");
     const underlyingChange = document.getElementById("underlyingChange");
     const optionTable = document.getElementById("optionTable");
@@ -181,9 +187,15 @@
     });
 
     let currentRows = [];
+    let atmCentered = false;
 
     async function loadUnderlyings() {
       const type = instrumentType.value;
+      intervalGroup.style.display = type === "stock" ? "none" : "grid";
+      if (type === "stock") {
+        intervalSelect.innerHTML = "";
+        intervalSelect.value = "";
+      }
       const res = await fetch(`/api/option-chain/underlyings?type=${encodeURIComponent(type)}`);
       if (res.status === 401) {
         sessionStorage.removeItem("kite_access_token");
@@ -224,19 +236,54 @@
         opt.textContent = exp;
         expirySelect.appendChild(opt);
       });
+      await loadIntervals();
+    }
+
+    async function loadIntervals() {
+      const underlying = tickerSelect.value;
+      const expiry = expirySelect.value;
+      if (!underlying || !expiry) return;
+      const type = instrumentType.value;
+      if (type === "stock") {
+        await buildChain();
+        return;
+      }
+      const res = await fetch(
+        `/api/option-chain/intervals?underlying=${encodeURIComponent(underlying)}&expiry=${encodeURIComponent(expiry)}&type=${encodeURIComponent(type)}`
+      );
+      if (res.status === 401) {
+        sessionStorage.removeItem("kite_access_token");
+        window.location.href = "/";
+        return;
+      }
+      const data = await res.json();
+      intervalSelect.innerHTML = "";
+      const allOpt = document.createElement("option");
+      allOpt.value = "";
+      allOpt.textContent = "All Strikes";
+      intervalSelect.appendChild(allOpt);
+
+      data.intervals.forEach((val) => {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = `Every ${val}`;
+        intervalSelect.appendChild(opt);
+      });
+
       await buildChain();
     }
 
     async function buildChain() {
       const underlying = tickerSelect.value;
       const expiry = expirySelect.value;
+      const interval = intervalSelect.value;
       if (!underlying || !expiry) return;
 
       const type = instrumentType.value;
       const res = await fetch("/api/option-chain/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ underlying, expiry, count: 12, instrument_type: type }),
+        body: JSON.stringify({ underlying, expiry, interval, instrument_type: type }),
       });
 
       if (res.status === 401) {
@@ -288,6 +335,7 @@
       `;
 
       currentRows = Array.from(optionTable.querySelectorAll(".oc-row[data-strike]"));
+      atmCentered = false;
       applyMoneyness(data.ltp);
     }
 
@@ -320,6 +368,13 @@
         row.classList.add(callItm ? "call-itm-row" : "call-otm-row");
         row.classList.add(putItm ? "put-itm-row" : "put-otm-row");
       });
+
+      if (atmRow && !atmCentered) {
+        const container = optionTable;
+        const offset = atmRow.offsetTop - (container.clientHeight / 2) + (atmRow.clientHeight / 2);
+        container.scrollTop = Math.max(0, offset);
+        atmCentered = true;
+      }
     }
 
     async function startPolling() {
@@ -367,7 +422,8 @@
 
     instrumentType.addEventListener("change", loadUnderlyings);
     tickerSelect.addEventListener("change", loadExpiries);
-    expirySelect.addEventListener("change", buildChain);
+    expirySelect.addEventListener("change", loadIntervals);
+    intervalSelect.addEventListener("change", buildChain);
 
     if (sessionStorage.getItem("kite_access_token")) {
       loadUnderlyings();
